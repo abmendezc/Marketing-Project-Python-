@@ -1,0 +1,351 @@
+#### Marketing Project Python Script: Data Cleaning, Statistical Analysis, Regression Models
+
+## Import libraries 
+import numpy as np 
+import pandas as pd 
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# Import Data 
+marketing=pd.read_csv("../input/marketing-data/marketing_data.csv")
+print(marketing.info())
+marketing.head()
+
+####### Data Cleaning & Manipulation ########
+
+# Change income variable from object to float and remove $ and ,. Variable name income also includes unecessary spacing ' Income '
+marketing.columns = marketing.columns.str.replace(' ', '') #
+marketing['Income'] = marketing['Income'].str.replace('$', '')
+marketing['Income'] = marketing['Income'].str.replace(',', '').astype('float')
+
+# Convert date joined column from object to date time
+marketing['Dt_Customer']=pd.to_datetime(marketing['Dt_Customer'])
+
+### Check and correct null values ###
+marketing.isnull().sum().sort_values(ascending=False) # Income has 24 null values
+
+# Analyze income variable to determine the best value for filling income null values 
+sns.boxplot(marketing['Income']) 
+# there are a few income values that are significantly higher than the IQR and upper/lower limits
+sns.histplot(marketing['Income'])
+# left skew; will use median value for null values to avoid effect of outliers on mean
+
+# Replace null income values with median income  
+marketing['Income']=marketing['Income'].fillna(marketing['Income'].median())
+
+### Identify and Remove Outliers ###
+# only variable with outliers that seem like data entry mistakes and should be removed is year born. 
+sns.boxplot(marketing['Year_Birth']) 
+sns.histplot(marketing['Year_Birth'])
+# clear outliers like those born ~1900 (would age them at ~121 in 2021)
+# will remove those born before 1946 (aged 75 in 2021). Represents very small percent of sample. 
+marketing=marketing[marketing['Year_Birth']>1946].reset_index(drop=True) # rerun boxplot to check
+
+### Creating Additional Variables ###
+# Extract year, month and day from date joined 
+marketing['Year']=pd.DatetimeIndex(marketing['Dt_Customer']).year
+marketing['Month']=pd.DatetimeIndex(marketing['Dt_Customer']).month
+marketing['Day']=pd.DatetimeIndex(marketing['Dt_Customer']).day
+
+# Create total dependents variable from teen and kid home variable 
+marketing['TotalDependents']=marketing['Kidhome']+marketing['Teenhome']
+
+# Create total amount spent from sum of amount spent on all categories 
+mnt_col= [col for col in marketing.columns if 'Mnt' in col]
+marketing['MntTotal']=marketing[mnt_col].sum(axis=1)
+
+# Create total purchases from sum of all purchases 
+pur_col=[col for col in marketing.columns if 'Purchase' in col]
+marketing['TotalPurchases']=marketing[pur_col].sum(axis=1)
+
+# Create total campaigns accepted 
+cmp_col=[col for col in marketing.columns if 'Cmp' in col]
+marketing['AcceptedCmps']=marketing[cmp_col].sum(axis=1)
+
+# Check new variables 
+marketing.head()
+
+
+####### Statistical Analysis #######
+# Goal: Identify demographic features that have correlation/ relationship with target features: 
+#       Accepted Campaigns, Total Purchases, Amount Spent, Web Purchases, Web Visits
+# Demogrpahic Features: Education, Income, Dependents 
+## Correlation Matrix 
+corrs=marketing.drop(columns='ID').select_dtypes(include=np.number).corr(method='kendall')
+sns.clustermap(corrs, cmap="YlGnBu");
+
+# Number of purchases vs total amount spent
+ps=sns.lmplot(x='TotalPurchases',y='MntTotal', data=marketing) # strong postivie corr
+# Number of web vists vs number of deals purchased 
+webd=sns.lmplot(x='NumWebVisitsMonth',y='NumDealsPurchases', data=marketing) # weak positive corr 
+# Web Visits vs Web Purchases 
+plt.figure(figsize=(10,5))
+webvp= sns.lmplot(x='NumWebVisitsMonth', y='NumWebPurchases', data=marketing) # weak negative corr (what could make it positive?)
+
+
+### Total purchases ###
+# Scatterplot for total purchases based on income 
+plt.figure(figsize=(10,5))
+piscat= sns.scatterplot(x='Income', y='TotalPurchases', data=marketing) # strong positive correlation 
+# Education and Number of Purchases 
+plt.figure(figsize=(10,5))
+ep= sns.boxplot(x='Education',y='TotalPurchases',data=marketing) 
+# basic education had far lower IQR for total purchases (2x lower), Phd has slimmer IQR meaning on avg phd educated individuals 
+# made more purchses, everyone else is similar IQR of about 10-20 purchases
+# Total purchases by number of dependents 
+plt.figure(figsize=(10,5))
+pdep=sns.boxplot(x='Dependents',y='TotalPurchases', data=marketing)
+# clear negative correlation between the number of dependents one has and the number of purchases one makes 
+# those with 0 dependents made an avg of ~15-22 purchases. Those with one dependent had similar max in IQR but a low of ~5. 
+# Marital Status and Number of Purchases 
+plt.figure(figsize=(10,5))
+mp= sns.boxplot(x='Marital_Status',y='TotalPurchases',data=marketing) # No pattern 
+# Country and Number of Purchases 
+plt.figure(figsize=(10,5))
+cp= sns.boxplot(x='Country',y='TotalPurchases',data=marketing) # all similar number of purchases 
+
+### Total Amount Spent ### 
+## Scatterplot for total amount spent based on income
+plt.figure(figsize=(10,5))
+tascat= sns.scatterplot(x=' Income ',y='MntTotal', data=marketing) # Strong positive relationship 
+# Boxplot for total amount spent based on dependents
+plt.figure(figsize=(6,5))
+mntb= sns.boxplot(x='Dependents',y='MntTotal', data=marketing)
+mntb.set(xlabel='Number of Dependents', ylabel='Total $ Spent')
+# Those with no dependents once spent significantly more than those with dependents by almost 2x. Clear negative relationship
+# between the total amount an individual spent and the number of dependents they have.
+# Education and total amount spent
+plt.figure(figsize=(10,5))
+ep= sns.boxplot(x='Education',y='MntTotal',data=marketing)
+# Those with basic education spent a lot less than those with higher education. 2n cycle eduated individuals had the next lowest
+# average amount spent. All education levels after that have similar spending with Phd having highest max IQR value. 
+# Marital Status and total amount spent
+plt.figure(figsize=(10,5))
+rp= sns.boxplot(x='Marital_Status',y='MntTotal',data=marketing) # no relationship 
+
+### Accepted Campaigns ### 
+# Number of Campaigns Accepted by dependents 
+plt.figure(figsize=(10,5))
+pdep=sns.boxplot(x='AcceptedCmps',y='Dependents', data=marketing)
+# No real pattern but it does seem like there is a slight negative relationship between the number of dependents one 
+# has and the number of campaigns one accepts. 
+# Boxplot for number of accepted campaigns by income 
+plt.figure(figsize=(6,5));
+cbox = sns.boxplot(x='AcceptedCmps',y=' Income ', data=marketing);
+cbox.set(xlabel='Number of Accepted Campaigns', ylabel='Income') # positive relationship between accepted campaigns and income 
+# those that accepted the most campaigns had an income of about $80,000-90,000
+# Number of Campaigns accepted by education adjusted for overrepresentation 
+df=marketing[['Education','AcceptedCmps']]
+plt.figure(figsize=(10,10))
+cmpse=[]
+cmpse.append(np.sum(df[df['Education'] == 'Basic']['AcceptedCmps'])/len(df[df['Education'] == 'Basic']['AcceptedCmps']))
+cmpse.append(np.sum(df[df['Education'] == '2n Cycle']['AcceptedCmps'])/len(df[df['Education'] == '2n Cycle']['AcceptedCmps']))
+cmpse.append(np.sum(df[df['Education'] == 'Graduation']['AcceptedCmps'])/len(df[df['Education'] == 'Graduation']['AcceptedCmps']))
+cmpse.append(np.sum(df[df['Education'] == 'Master']['AcceptedCmps'])/len(df[df['Education'] == 'Master']['AcceptedCmps']))
+cmpse.append(np.sum(df[df['Education'] == 'PhD']['AcceptedCmps'])/len(df[df['Education'] == 'PhD']['AcceptedCmps']))
+x=["Basic", "2n Cycle", "Graduation", "Master", "PhD"]
+fig1= sns.barplot(x=x, y=cmpse)
+# Boxplot did not offer much information. Bar plot adjusted for potential overrepresentation of education in sample size shows that 
+# PhD educated individuals had the greatest camapaign acceptance %. Overall there is a clear trend of higher educated individuals
+# having higher campaign acceptance % (except for master educated people who accepted campaigns at a lower rate than graduation)
+
+### Web Purchases ### 
+# Scatterplot for number of web purchases based on income 
+plt.figure(figsize=(10,5))
+webscat= sns.lmplot(x='NumWebPurchases', y='Income', data=marketing) # strong positive relationship 
+# Boxplot for number of web purchases based on education 
+plt.figure(figsize=(6,5));
+cbox = sns.boxplot(x='Education',y='NumWebPurchases', data=marketing);
+cbox.set(xlabel='Education', ylabel='NumWebPurchases')
+# All education levels except for basic made similar number of web purchases (around 3-6). 2n cycle and master had a slightly lower
+# mean number of web purchases (compared to Graduation and PhD). Basic made a significantly lower number of purchases via web. 
+## Boxplot for number of accepted campaigns by dependents
+plt.figure(figsize=(6,5));
+cbox = sns.boxplot(x='Dependents',y='NumWebPurchases', data=marketing);
+cbox.set(xlabel='Dependents', ylabel='NumWebPurchases') # number of dependents negativley impacts the number of web purchases
+
+### Web Visits ### 
+## Scatterplot for number of web visits per month based on income 
+plt.figure(figsize=(10,5))
+piscat= sns.lmplot(x='NumWebVisitsMonth', y='Income', data=marketing) # very strong negative relationship 
+# Education and Number of web visits per month 
+plt.figure(figsize=(10,5))
+rp= sns.boxplot(x='Education',y='NumWebVisitsMonth',data=marketing) # No clear relationship but basic education does have 
+#  a hgher mean number of web visits despite making the least amount of purchases via web. 
+# Number of dependents and number of web visits
+plt.figure(figsize=(10,5))
+rp= sns.boxplot(x='Dependents',y='NumWebVisitsMonth',data=marketing) # positive relationship between number of dependents and web visits
+
+### Num Deals Purchases ### 
+## Boxplot for number of deals purchased by number of dependents 
+plt.figure(figsize=(6,5))
+dbox=sns.boxplot(x='Dependents', y='NumDealsPurchases', data=marketing)
+dbox.set(xlabel='Number of Dependents ', ylabel='Number of Deals Purchased') # Positive relationship 
+## Scatterplot for total purchases based on income 
+plt.figure(figsize=(10,5))
+piscat= sns.lmplot(x='NumDealsPurchases', y=' Income ', data=marketing) # Slight negative relationship 
+# Education and Number of Purchases 
+plt.figure(figsize=(10,5))
+rp= sns.boxplot(x='Education',y='NumDealsPurchases',data=marketing) # No clear pattern, basic has slightly lower mean and max. 
+
+
+####### Regression Analysis ####### 
+# Goal: Further identify demographic features that have linear correlation with target features: 
+#       Accepted Campaigns, Total Purchases, Amount Spent, Web Purchases, Web Visits
+# Drop columns that wont be needed for regressions: ID and dt customer
+marketing.drop(columns=['ID','Join_Date'],axis=1, inplace=True)
+
+# Encode categorical features for regression 1 
+from sklearn.preprocessing import OneHotEncoder
+
+# How many unique values does each categorical feature have? (how many additional columns will be added)
+qual=marketing.select_dtypes(exclude=np.number)
+print("Number of Unique Values Per Categorical Column:/n", qual.nunique()) # Education:5, Marital: 8, Country: 8
+
+# use encoder to create dummy variables for categorical features 
+enc=OneHotEncoder(sparse=False).fit(qual)
+qual_enc=pd.DataFrame(enc.transform(qual))
+qual_enc.columns=enc.get_feature_names(qual.columns)
+
+# merge dummy variables with numerical values excluded above
+quan=marketing.drop(columns=qual.columns)
+data=pd.concat([qual_enc,quan],axis=1)
+data.head() # all data looks good
+
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import mean_squared_error
+
+# Define y and X for reg and split data frame into training (70%) and test (30%) data
+y=data['TotalPurchases']
+X=data.drop(columns='TotalPurchases')
+X_train,X_test, y_train,y_test=train_test_split(X,y, test_size=0.3, random_state=1)
+
+# Run regression 
+reg1=LinearRegression()
+reg1.fit(X_train,y_train)
+
+# Predictions 
+preg1=reg1.predict(X_test)
+
+# Use root squared mean error (RMSE) to evaluate predicted values on test data set 
+print("Total Purchases Regression RMSE:", np.sqrt(mean_squared_error(y_test,preg1)))
+print("Median value of Total Purchases (y):", y.median()) # looks like a good fit for model
+
+# Use SHAP summary to determine direction of each features weight. 
+import shap
+
+#calculate shap values
+reg1f=shap.Explainer(reg1, X_train)
+shap_values=reg1f(X_test)
+
+#plot
+plt.title('SHAP summary for Total Purchases',size=16)
+shap.plots.beeswarm(shap_values,max_display=5); # all positive 
+## regression for total purchases shows that the only statistically significant features are num store purchases, num catalog 
+## purchases, num web purchases, num deals purchases, all in a positive direction. This tells me that that the number one method
+## driving the total number of purchases is in store purchases (+0.4), while catalog and web purchases increase the total number of 
+## purchases by a smaller amount (0.23 & 0.25). Deals purchases contributed the least (0.12). Unfortunatley no direct correlation 
+## with demographic features.
+
+# Regression 2: Target Variable (y) = Accepted Campaigns 
+plt.figure(figsize=(10,5))
+cmp=sns.countplot(x='AcceptedCmps', data=marketing) # right skew again (almost all customers accepted 0 campaigns)
+# Define y and X for reg and split data frame into training (70%) and test (30%) data
+y=data['AcceptedCmp5']
+X=data.drop(columns='AcceptedCmp5')
+X1_train,X1_test, y1_train,y1_test=train_test_split(X,y, test_size=0.3, random_state=1)
+
+# Run regression 
+reg2=LinearRegression()
+reg2.fit(X1_train,y1_train)
+
+# Predictions 
+preg2=reg2.predict(X1_test)
+
+# Use root squared mean error (RMSE) to evaluate predicted values on test data set 
+print("Accepted Campaigns Regression RMSE:", np.sqrt(mean_squared_error(y1_test,preg2)))
+print("Median value of Accpeted Campaigns (y):", y.median()) # looks like a good fit for model
+
+rr2= PermutationImportance(reg2, random_state=1).fit(X1_test, y1_test)
+eli5.show_weights(rr2, feature_names = X1_test.columns.tolist(), top=6) 
+
+#calculate shap values
+reg2f=shap.Explainer(reg2, X1_train)
+shap_values=reg2f(X1_test)
+
+#plot
+plt.title('SHAP summary for Accepted Campaigns',size=16)
+shap.plots.beeswarm(shap_values,max_display=5); 
+
+## ran regression for accepted campaigns variable but predictably got a strong positive weight for all previous campaigns. I then 
+## ran a regression for each campaign and discovered a strong positive weight on total campaigns accepted variable. However,
+## each campaign had a negative weight associated with it, meaning that customers are less likely to accept more than one 
+## campaign after accepting a previous campaign. This would explain the right skew bar plot. This means our campaigns are losing
+## effectivness. Hard to draw too many conclusions without context. 
+
+## Regression 3: Target Variable = number of web visits 
+
+y3=data['NumWebVisitsMonth']
+X3=data.drop(columns='NumWebVisitsMonth')
+X3_train,X3_test, y3_train,y3_test=train_test_split(X3,y3, test_size=0.3, random_state=1)
+
+# Run regression 
+reg4=LinearRegression()
+reg4.fit(X3_train,y3_train)
+
+# Predictions 
+preg4=reg4.predict(X3_test)
+
+# Use root squared mean error (RMSE) to evaluate predicted values on test data set 
+print("Number of Web Visits RMSE:", np.sqrt(mean_squared_error(y3_test,preg3)))
+print("Median value of Web Visits (y):", y3.median()) # looks like a good fit for model 
+
+rr4= PermutationImportance(reg4, random_state=1).fit(X3_test, y3_test)
+eli5.show_weights(rr4, feature_names = X3_test.columns.tolist(), top=10) 
+
+#calculate shap values
+reg4f=shap.Explainer(reg4, X3_train)
+shap_values=reg4f(X3_test)
+
+#plot
+plt.title('SHAP summary for Web Visits',size=16)
+shap.plots.beeswarm(shap_values,max_display=10); 
+
+## The number of web visits is heavily correlated with the amount spent on wine, income and the total amount spent. 
+## Web visits are positivley correlated with the number of web visits indicating that customers that spent more on wine
+## had a greater number of web visits (assuming this is because most alcohol is purchased in person but maybe browsed online). 
+## Web visits are negativley correlated with income, meaning our higher income customers are spending less time browsing the 
+## website but are still making more web purchases, indicating higher conversion rate for higher income individuals. 
+## Negative correlation with total amount spent indicates similar findiings as income and web visits. 
+## Negative correlation with in store purchasing method indicates those who prefer to purchase in store are not visiting website 
+## as often which can partially explain low marketing campaign acceptance (assuming camapaigns are online). 
+
+## Regression 4: target variable = number of web purchases
+y2=data['NumWebPurchases']
+X2=data.drop(columns='NumWebPurchases')
+X2_train,X2_test, y2_train,y2_test=train_test_split(X2,y2, test_size=0.3, random_state=1)
+
+# Run regression 
+reg3=LinearRegression()
+reg3.fit(X2_train,y2_train)
+
+# Predictions 
+preg3=reg3.predict(X2_test)
+
+# Use root squared mean error (RMSE) to evaluate predicted values on test data set 
+print("Number of Web Purchases RMSE:", np.sqrt(mean_squared_error(y2_test,preg3)))
+print("Median value of Web Purchases (y):", y2.median()) # looks like a good fit for model 
+
+rr3= PermutationImportance(reg3, random_state=1).fit(X2_test, y2_test)
+eli5.show_weights(rr3, feature_names = X2_test.columns.tolist(), top=6)
+#calculate shap values
+reg3f=shap.Explainer(reg3, X2_train)
+shap_values=reg3f(X2_test)
+
+#plot
+plt.title('SHAP summary for Num Web Purchases',size=16)
+shap.plots.beeswarm(shap_values,max_display=6); 
+## The number of web purchases increases with the number of total purchases (which is good we want postivie relationship there). 
+## this regression model also shows that the number of web purchases decreases with the number of other purchasin methods. 
+## This can be interpreted as those who shop online are those who shop less in store or via other methods. 
